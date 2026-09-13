@@ -237,7 +237,7 @@
         background: #00b9ff; 
         color: white; 
         border: none; 
-        padding: 8px 16px; 
+        padding: 8px 12px; 
         border-radius: 6px; 
         cursor: pointer; 
         font-weight: bold; 
@@ -245,9 +245,21 @@
         white-space: nowrap;
         margin-right: 15px; 
         z-index: 2; 
+        width: 88px;
+        box-sizing: border-box;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
     .copy-btn:hover { background: #0095cc; }
     .copy-btn.copied { background: #4caf50; }
+
+    .copy-btn.copy-btn-pill {
+        background: #fff;
+        color: #00b9ff;
+        border: 1.5px solid #00b9ff;
+    }
+    .copy-btn.copy-btn-pill:hover { background: #f1f8ff; }
 
 /* First-time tracker name modal */
 .name-modal-overlay {
@@ -5629,6 +5641,13 @@ function renderCards(filterText = '') {
 
         let contentHtml = '';
 
+        // A template with more than one scenario should not be copyable
+        // straight from the collapsed row, since the wrong scenario could
+        // get sent to a customer without anyone noticing. The button starts
+        // as an outlined "N scenarios" pill instead of "Copy" until the
+        // card has actually been opened.
+        const hasMultipleOptions = !!(reply.options && reply.options.length > 1);
+
         // -----------------------------
         // OPTIONS / SCENARIOS
         // -----------------------------
@@ -5732,15 +5751,15 @@ card.innerHTML = `
         ${categoryHtml}
 
         <button
-            class="copy-btn"
+            class="copy-btn${hasMultipleOptions ? ' copy-btn-pill' : ''}"
             id="btn-${index}"
-            onclick="copyRichText(
+            onclick="handleCopyClick(
                 event,
                 ${index},
                 'btn-${index}'
             )"
         >
-            Copy
+            ${hasMultipleOptions ? 'Choose' : 'Copy'}
         </button>
 
     </summary>
@@ -5751,6 +5770,21 @@ card.innerHTML = `
 `;
 
         resultsDiv.appendChild(card);
+
+        if (hasMultipleOptions) {
+            card.addEventListener('toggle', function () {
+                const btn = document.getElementById(`btn-${index}`);
+                if (!btn) return;
+
+                if (card.open) {
+                    btn.textContent = 'Copy';
+                    btn.classList.remove('copy-btn-pill');
+                } else {
+                    btn.textContent = 'Choose';
+                    btn.classList.add('copy-btn-pill');
+                }
+            });
+        }
     });
 }
 
@@ -5809,6 +5843,36 @@ document
     });
     
     // 2. Copy Function with Cross-Domain Messaging
+    // For a template with multiple scenarios, clicking the button while
+    // it's still in the "N scenarios" pill state should just open the card
+    // so the agent can see and pick a scenario - not copy anything yet.
+    // The click is allowed to bubble normally here so the browser's own
+    // <details>/<summary> toggle behavior opens the card; the "toggle"
+    // listener set up in renderCards() then flips the button to "Copy".
+    // Once the button already reads "Copy" (single-option templates
+    // always, multi-option templates once opened), this hands off to
+    // copyRichText as before.
+    function handleCopyClick(event, index, btnId) {
+        const btn = document.getElementById(btnId);
+        const card = btn.closest('details');
+        const isPill = btn.classList.contains('copy-btn-pill');
+
+        if (isPill && card && !card.open) {
+            // A button click doesn't bubble up into the parent <summary>'s
+            // native toggle behavior - buttons have their own click
+            // behavior that takes priority, so the <details> never opens
+            // on its own here. Opening it directly still fires the
+            // "toggle" event, which is what actually flips the button
+            // over to "Copy".
+            event.stopPropagation();
+            event.preventDefault();
+            card.open = true;
+            return;
+        }
+
+        copyRichText(event, index, btnId);
+    }
+
     function copyRichText(event, index, btnId) {
         event.stopPropagation();
         event.preventDefault();
